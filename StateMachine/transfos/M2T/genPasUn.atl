@@ -1,0 +1,274 @@
+module genPasUn;
+create result : MM from model : MM;
+
+
+---------- STATEMACHINE ----------
+
+rule duplicateStateMachine { 
+from
+	 sourceStateMachine : MM!StateMachine
+to
+	 targetStateMachine : MM!StateMachine(
+	 	 name <- sourceStateMachine.name,
+	 	 container <- sourceStateMachine.container,
+	 	 isActive <- true, -- La statemachine est forcément active au premier pas de temps
+	 	 operation <- sourceStateMachine.operation,
+	 	 states <- sourceStateMachine.states,
+	 	 initialState <- sourceStateMachine.initialState,
+	 	 transitions <- sourceStateMachine.transitions,
+	 	 events <- sourceStateMachine.events,
+	 	 variables <- sourceStateMachine.variables
+	 )
+} 
+
+
+--------- HELPERS ---------
+
+helper context MM!State def:isInitialState():Boolean=
+	if self.container.oclIsUndefined() then
+		true
+	else
+		if self.container.isInitialState() then -- Test si son conteneur est bien etat inital lui aussi
+			if self.container.initialState.referencedState=self then -- Test si l'état initial de son conteneur est bien lui-même
+				true
+			else 
+				false
+			endif
+		else
+			false
+		endif
+	endif
+;
+
+
+---------- STATE ----------
+
+rule duplicateStateActive { 
+	
+	from
+	 sourceState : MM!State (sourceState.oclIsTypeOf(MM!State) and sourceState.isInitialState())
+ 
+	 to
+	 targetState : MM!State(
+	 	 name <- sourceState.name,
+	 	 container <- sourceState.container,
+	 	 isActive <- true, -- L'etat est actif si il est défini comme état initial
+	 	 operation <- sourceState.operation
+	 )
+	 do{
+	 	'DO'.println();
+	 	targetState.name.println();
+	 	if (not sourceState.operation.contents.oclIsUndefined())
+	 	{
+			'if OK'.println();
+	 		for (c in sourceState.operation.contents) {
+				'for OK'.println();
+				if(c.expression.oclIsKindOf(MM!Data))
+				{
+					'OK1'.println();
+					c.variable.value <- c.expression;
+					'OK2'.println();
+				}
+				else if (c.expression.oclIsKindOf(MM!Expression))
+				{
+					
+				}
+			}
+	 	}
+	 		
+	 }
+}
+
+
+rule duplicateStateInactive { 
+from
+	 sourceState : MM!State (sourceState.oclIsTypeOf(MM!State) and not(sourceState.isInitialState()))
+to
+	 targetState : MM!State(
+	 	 name <- sourceState.name,
+	 	 container <- sourceState.container,
+	 	 isActive <- false, -- L'etat est n'est pas actif si il n'est pas défini comme état initial
+	 	 operation <- sourceState.operation
+	 )
+} 
+
+
+	
+
+---------- COMPOSITESTATE ----------
+
+rule duplicateCompositeStateActive { 
+from
+	 sourceCompositeState : MM!CompositeState (sourceCompositeState.oclIsTypeOf(MM!CompositeState) and sourceCompositeState.isInitialState())
+to
+	 targetCompositeState : MM!CompositeState(
+	 	 name <- sourceCompositeState.name,
+	 	 container <- sourceCompositeState.container,
+	 	 isActive <- true, -- L'etat composite est actif si il est défini comme état initial
+	 	 operation <- sourceCompositeState.operation,
+	 	 states <- sourceCompositeState.states,
+	 	 initialState <- sourceCompositeState.initialState
+	 )
+}
+
+rule duplicateCompositeStateInactive { 
+from
+	 sourceCompositeState : MM!CompositeState (sourceCompositeState.oclIsTypeOf(MM!CompositeState) and not(sourceCompositeState.isInitialState()))
+to
+	 targetCompositeState : MM!CompositeState(
+	 	 name <- sourceCompositeState.name,
+	 	 container <- sourceCompositeState.container,
+	 	 isActive <- false, -- - L'etat composite est n'est pas actif si il n'est pas défini comme état initial
+	 	 operation <- sourceCompositeState.operation,
+	 	 states <- sourceCompositeState.states,
+	 	 initialState <- sourceCompositeState.initialState
+	 )
+} 
+
+
+---------- INITIALSTATE ----------
+
+rule duplicateInitialState { 
+from
+	 sourceInitialState : MM!InitialState
+to
+	 targetInitialState : MM!InitialState(
+	 	 referencedState <- sourceInitialState.referencedState
+	 )
+} 
+
+
+---------- TRANSITION ----------
+
+rule duplicateTransition { 
+from
+	 sourceTransition : MM!Transition
+to
+	 targetTransition : MM!Transition(
+	 	 source <- sourceTransition.source,
+	 	 target <- sourceTransition.target,
+	 	 event <- sourceTransition.event,
+	 	 guard <- sourceTransition.guard
+	 )
+} 
+
+
+---------- EVENT ----------
+
+rule duplicateEvent { 
+from
+	 sourceEvent : MM!Event
+to
+	 targetEvent : MM!Event(
+	 	 name <- sourceEvent.name
+	 )
+} 
+
+
+---------- EXPRESSION ----------
+
+rule duplicateExpression { 
+from
+	 sourceExpression : MM!Expression
+to
+	 targetExpression : MM!Expression(
+	 	 left <- sourceExpression.left,
+	 	 right <- sourceExpression.right,
+	 	 operator <- sourceExpression.operator,
+	 	 _name <- sourceExpression._name
+	 )
+} 
+
+
+---------- BOOLEANDATA ----------
+
+rule duplicateBooleanData { 
+from
+	 sourceBooleanData : MM!BooleanData
+to
+	 targetBooleanData : MM!BooleanData(
+	 	 value <- sourceBooleanData.value
+	 )
+} 
+
+
+---------- INTEGERDATA ----------
+
+rule duplicateIntegerData { 
+from
+	 sourceIntegerData : MM!IntegerData
+to
+	 targetIntegerData : MM!IntegerData(
+	 	 value <- sourceIntegerData.value
+	 )
+} 
+
+
+---------- BOOLEANVARIABLE ----------
+
+rule duplicateBooleanVariable { 
+from
+	 sourceBooleanVariable : MM!BooleanVariable
+to
+	 targetBooleanVariable : MM!BooleanVariable(
+	 	 value <- sourceBooleanVariable.value,
+	 	 name <- sourceBooleanVariable.name
+	 )
+} 
+
+
+---------- INTEGERVARIABLE ----------
+
+rule duplicateIntegerVariable { 
+from
+	 sourceIntegerVariable : MM!IntegerVariable
+to
+	 targetIntegerVariable : MM!IntegerVariable(
+	 	 value <- sourceIntegerVariable.value,
+	 	 name <- sourceIntegerVariable.name
+	 )
+} 
+
+
+---------- OPERATION ----------
+
+rule duplicateOperation { 
+from
+	 sourceOperation : MM!Operation
+to
+	 targetOperation : MM!Operation(
+	 	 contents <- sourceOperation.contents
+	 )
+} 
+
+
+---------- ASSIGNMENT ----------
+
+rule duplicateAssignment { 
+from
+	 sourceAssignment : MM!Assignment
+to
+	 targetAssignment : MM!Assignment(
+	 	 expression <- sourceAssignment.expression,
+	 	 variable <- sourceAssignment.variable,
+	 	 _name <- sourceAssignment._name
+	 )
+} 
+
+
+---------- VARIABLEREFERENCE ----------
+
+rule duplicateVariableReference { 
+from
+	 sourceVariableReference : MM!VariableReference
+to
+	 targetVariableReference : MM!VariableReference(
+	 	 variable <- sourceVariableReference.variable,
+	 	 _name <- sourceVariableReference._name
+	 )
+} 
+
+-- Choses à faire :
+-- 		-Opérations à enclancher
+
+

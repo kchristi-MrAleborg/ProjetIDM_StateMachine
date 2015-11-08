@@ -1,0 +1,543 @@
+/* $Id:$ 
+ * Creation : October 16, 2015
+ * Licence  : EPL 
+ * Copyright:
+ * Authors  : 
+ *            Alexandre
+ */
+@mainClass "transfos::M2T::Generator"
+@mainOperation "main"
+
+
+package transfos::M2T;
+
+
+require kermeta
+require "platform:/resource/StateMachine/transfos/StateMachineUtil.kmt"
+require "platform:/resource/StateMachine/metaModels/StateMachine.ecore"
+ 
+using kermeta::io
+using kermeta::standard
+using kermeta::exceptions
+using kermeta::persistence
+using SimplStateMachine
+
+
+
+class Generator inherits StateMachineUtil::Util 
+{	
+
+	operation refactorString(s : String) : String is do
+		result := s.replace(" ", "_")
+	end
+	/**
+	*	Generates code of the whole state machine
+	*	Write in a java file
+	*/
+	operation genCode(sm : StateMachine) : String is do
+		var className : String init refactorString(sm.name)
+	
+		var code : String init 
+		
+		
+"//Generated code from genCode.kmt
+
+package generatedByKermeta;
+
+import com.pauware.pauware_engine._Core.*;
+import com.pauware.pauware_engine._Exception.*;
+import com.pauware.pauware_engine._Java_EE.*;
+import java.util.Scanner;
+
+
+public class " + className + " implements Manageable{
+
+	// Variables
+"
+		/* Generate variables */
+		sm.variables.each{v| code := code + "\t" +genVariable(v)}
+		
+		/* Generate UML state machine */
+		code := code + "\n\t// UML state machine\n"
+		code := code + "\tAbstractStatechart_monitor " + getMonitor(sm) +";\n"
+		sm.states.each{s|code := code + "\t" + genUMLStateMachine(s)}
+		
+		/* Generate init_behaviour() */
+		code := code + "\n\t// Creation of the state machine\n"
+		code := code + genInitBehavior(sm)
+		
+		/* Generate start() */
+		code := code + "\n\t// Add transitions and start the state machine\n"
+		code := code + genStart(sm)
+		
+		/* Generate stop()  */
+		code := code + "\n" + genStop(getMonitor(sm))
+		
+		/* Generate UML events */
+		code := code + "\n\t//-----------\n"
+		code := code + "\t// UML events\n"
+		code := code + "\t//-----------\n\n"
+		code := code + genUMLEvents(sm)
+		
+		/* Generate actions */
+		code := code + "\t//-------------------------\n"
+		code := code + "\t// UML actions (activities)\n"
+		code := code + "\t//-------------------------\n\n"
+		code := code + genActivities(sm)
+		
+		/* Generate guards */
+		code := code + "\t//-----------\n"
+		code := code + "\t// UML guards\n"
+		code := code + "\t//-----------\n\n"
+		code := code + genGuards(sm)
+		
+		
+		/* Generate constructor */
+		code := code + "\t// Constructor\n"
+		code := code + genConstructor(className)
+		
+		/* Generate State Machine Management */
+		code := code + "\n\t//-------------------------\n"
+		code := code + "\t// State machine management\n"
+		code := code + "\t//-------------------------\n"
+		code := code + genManagement(sm)
+		
+		/* Generate main */
+		code := code + "\n\t// Main function\n"
+		code := code + genMain(sm, className)
+		
+		code := code +"\n}"
+		result := code
+	end
+	
+	/**
+	* Generate code of the variables of the state machine
+	* Returns a String 
+	*/
+	operation genVariable(variable : Variable) : String is do
+		var res : String
+		var bool : Boolean init false
+		
+		if ( variable.isInstanceOf(BooleanVariable) ) then res:="Boolean "
+			bool := true
+			else if ( variable.isInstanceOf(IntegerVariable) ) then res:="Integer "
+			end
+		end
+		
+		res := res + variable.name
+		
+		if( variable.~value.isVoid() )
+			then result := res + ";\n"
+			else if (bool) then result :=  res + " = " + (variable.~value.asType(BooleanData)).~value.toString() + ";\n"
+				else result := res + " = " + (variable.~value.asType(IntegerData)).~value.toString() + ";\n"
+			end
+		end
+		
+	end
+	
+	/**
+	* Generate the code of the states of the given state machine
+	* Returns a string
+	*/
+	operation genUMLStateMachine(state : State) : String is do
+		var stateString : String init  getStateName(state)
+		if (CompositeState.isInstance(state)) 
+			then stateString := "AbstractStatechart " + stateString + ";\n"
+			var composite : CompositeState init state.asType(CompositeState)
+			composite.states.each{s|stateString := stateString + "\t" +genUMLStateMachine(s)}
+			result := stateString	
+		else result := "AbstractStatechart " + stateString +";\n"
+		end	
+	end
+	
+	operation getStateName(state : State) : String is do
+		if ( CompositeState.isInstance(state) ) 
+			then result := "_" + refactorString(((state.container).asType(State)).name) + "_Composite_" + state.name
+			else result := "_" + refactorString(((state.container).asType(State)).name) + "_"+state.name
+		end
+	end
+	
+	operation genInitBehavior(sm : StateMachine) : String is do
+		var initbehavior : String init "\tprivate void init_behavior() throws Statechart_exception {\n"
+		sm.states.each{s| var str : String init getStateName(s)
+			if (CompositeState.isInstance(s))
+				then (s.asType(CompositeState)).states.each{s2 | var str2 : String init getStateName(s2)
+					initbehavior := initbehavior + "\t\t" + str2 + " = new Statechart(\""+s2.name+"\");\n"
+					initbehavior := initbehavior + getInitial(s2, str2)
+					initbehavior := initbehavior + getActivityStatement(s2, str2)
+					initbehavior := initbehavior + "\n" 
+				}
+				else initbehavior := initbehavior + "\t\t" + str + " = new Statechart(\""+s.name+"\");\n"
+					initbehavior := initbehavior + getInitial(s, str)
+					initbehavior := initbehavior + getActivityStatement(s, str)
+					initbehavior := initbehavior + "\n" 
+			end
+		}
+		
+		initbehavior := initbehavior + composeStates(sm)
+		
+		initbehavior := initbehavior + "\n\t\t// PauWare viewer:\n"
+        initbehavior := initbehavior + "\t\t//com.pauware.pauware_view.PauWare_view pv = null;\n"
+        initbehavior := initbehavior + "\t\t// uncomment the following line for launching the viewer\n"
+        initbehavior := initbehavior + "\t\t//pv = new com.pauware.pauware_view.PauWare_view();\n\n"
+        initbehavior := initbehavior + "\t\t// creation of the state machine\n"
+        initbehavior := initbehavior + "\t\t" + composeMonitor(sm)
+        
+		result := initbehavior + "\t}\n"
+	end
+	
+	operation getInitial (state : State, s : String) : String is do
+		if ((((state.container.asType(CompositeState)).initialState.asType(InitialState)).referencedState).equals(state)) 
+			then result :=  "\t\t" + s + ".inputState();\n" 
+			else result := ""
+		end
+	end
+	
+	operation getActivityStatement(state : State, s : String) : String is do
+		if ( state.~operation.isVoid() == false)
+			then result := "\t\t" + s + ".doActivity(this, \"" + genActivityName(s) +"\");\n"
+			else result := ""
+		end
+	end
+	
+	operation genActivityName(s : String) : String is do
+		var res : String init s.replace("_", "")
+		result := res.toLowerCase() + "Activity"
+	end
+	
+	operation getMonitor(sm : StateMachine) : String is do
+		result := "Gen_" + sm.name.replace(" ", "") + "_stateMachine"
+	end
+	
+	operation composeStates(sm : StateMachine) : String is do
+		var res : String init ""
+		var premier : Boolean
+		sm.states.each{s|
+			premier := true
+			if( CompositeState.isInstance(s) ) 
+				then (s.asType(CompositeState)).states.each{s2| 
+					if(premier)
+						then res := res + "\t\t" + getStateName(s) + "=" + getStateName(s2)
+							premier := false
+						else res := res + ".xor(" + getStateName(s2) + ")"
+					end }
+				res := res + ".name(\""+ s.name +"\");\n"
+				res := res + getInitial(s, getStateName(s))
+			end
+		}	
+		result := res
+	end
+	
+	operation composeMonitor(sm : StateMachine) :String is do
+		var res : String init getMonitor(sm) + " = new Statechart_monitor("
+		var premier : Boolean init true
+			sm.states.each{s|
+				if (premier)
+					then res := res + getStateName(s)
+						premier := false
+					else res := res + ".xor(" + getStateName(s) + ")"
+				end 
+			}
+			res := res + ",\"Gen_" + refactorString(sm.name) + "\", AbstractStatechart_monitor.Show_on_system_out/*, pv*/"	
+		result := res + ");\n"
+	end
+	
+	operation genStart(sm : StateMachine) : String is do
+		var monitor : String init getMonitor(sm)
+	
+		var res : String init "\tpublic void start() throws Statechart_exception {\n"
+		res := res + "\n\t\t// creation of the transitions between states\n"
+		sm.transitions.each{t|
+			res := res + "\t\t" + monitor + ".fires(\"" + getEvent(t) + "\", " + getStateName(t.source) + ", " + getStateName(t.target)
+			if ( not t.guard.isVoid() )
+				then res := res + ", this, \"" + genGuardName(t) + "\""
+			end
+			res := res + ");\n"
+		}
+		res := res + "\n\t\t" + getMonitor(sm) + ".start();\n"
+		result := res + "\t}\n"
+	end
+	
+	operation getEvent(t : Transition) : String is do
+		result := refactorString(t.event.name)
+	end
+	
+	operation genGuardName(t : Transition) : String is do
+		var source : String init t.source.name
+		var target : String init t.target.name
+		result := "guard_" + source + "_To_" + target
+	end
+	
+	operation genStop(s : String) : String is do
+		var res : String init "\t\tpublic void stop() throws Statechart_exception {\n"
+		res := res + "\t\t" + s + ".stop();\n"
+		result := res + "\t}\n"
+	end
+	
+	operation genUMLEvents(sm : StateMachine) : String is do
+		var res : String init ""
+		sm.events.each{e|
+			res := res + genEvent(e, getMonitor(sm)) + "\n"
+		}
+		result := res
+	end
+	
+	operation genEvent(e : Event, monitor : String) : String is do
+		var res : String init "\tpublic void evt"
+		var s : String init e.name.substring(0, 1)
+		var S : String init s.toUpperCase()
+		var name : String init refactorString(e.name)
+		res := res + S + name.substring(1, name.size) + "() throws Statechart_exception {\n"
+		res := res + "\t\t" + monitor + ".run_to_completion(\"" + refactorString(e.name) + "\", AbstractStatechart_monitor.Compute_invariants);\n"
+		result := res + "\t}\n"
+	end
+	
+	operation genActivities(sm : StateMachine) : String is do
+		var res : String init ""
+		sm.states.each{s|
+			if ( not s.~operation.isVoid() )
+				then res := res + genSingleActivity(s) + "\n"
+			end
+			if ( CompositeState.isInstance(s) )
+				then (s.asType(CompositeState)).states.each{s2|
+					if ( not s2.~operation.isVoid() )
+						then res := res + genSingleActivity(s2) + "\n"
+					end
+				}
+			end
+		}
+		result := res
+	end
+	
+	operation genSingleActivity(s : State) : String is do
+		var res : String init "\tpublic void "
+		var op : String init ""
+		res := res + genActivityName(getStateName(s)) + "(){\n"
+		s.~operation.contents.each{a|
+			if (Expression.isInstance(a.expression))
+				then 
+					if ( VariableReference.isInstance((a.expression.asType(Expression)).left) )
+						then op := op + (((a.expression.asType(Expression)).left).asType(VariableReference)).variable.name
+					end
+			end
+			
+			res := res + "\t\t" + genAssignment(a) +";\n"
+		}
+		result := res + "\t}\n"
+	end
+	
+	operation genAssignment(a : Assignment) : String is do
+		var res : String init ""
+		if ( (a.expression).isInstanceOf(Expression) )
+			then res := res + genExpression(a.expression)
+		else res := res + ( a.variable.name ) + " = " + genExpression(a.expression) 
+		end
+		result := res
+	end
+	
+	operation genExpression(e : ExpressionElement) : String is do
+		var exp : Expression
+		var res : String init ""
+		if ( e.isInstanceOf(Expression) )
+				then exp := (e.asType(Expression))
+					if ( (exp.left).isInstanceOf(Expression) or (exp.right).isInstanceOf(Expression) )
+						then if ( (exp.left).isInstanceOf(Expression) )
+								then res := res + "(" + genExpression(exp.left) + ") " + getOp(exp.~operator)
+							end
+							if ( (exp.right).isInstanceOf(Expression) )
+								then res := res + " (" + genExpression(exp.right) + ")"
+							end
+						else res := res + genExpression(exp.left) + " " + getOp(exp.~operator) + " " + genExpression(exp.right)
+					end
+					else if ( e.isInstanceOf(VariableReference) )
+						then res := res + (e.asType(VariableReference))._name
+						else if ( e.isInstanceOf(Data) )
+							then if ( e.isInstanceOf(BooleanData) )
+								then res := res + (e.asType(BooleanData)).~value.toString()
+								else res := res + (e.asType(IntegerData)).~value.toString()
+							end
+						else res := ""
+					end
+				end
+		end
+		result := res
+		//result := ((exp.left.asType(VariableReference)).variable).name + exp._name
+		
+	end
+	
+	operation getOp(o : Operator) : String is do
+		var op : String
+		if ( o == Operator.add )
+			then op := "+="
+			else if ( o == Operator.sub )
+				then op := "-="
+				else if ( o == Operator.mul )
+					then op := "*="
+					else if ( o == Operator.div )
+						then op := "/="
+						else if ( o == Operator.eq )
+							then op := "=="
+							else if ( o == Operator.neq )
+								then op := "!="
+								else if ( o == Operator.gt )
+								 	then op := ">"
+								 	else if ( o == Operator.gte )
+								 		then op := ">="
+								 		else if ( o == Operator.lt )
+								 			then op := "<"
+								 			else if ( o == Operator.lte )
+								 				then op := "<="
+								 				else if ( o == Operator.~and )
+								 					then op := "&&"
+								 					else if ( o == Operator.~or )
+								 						then op := "||"
+								 						else if ( o == Operator.~not )
+								 							then op := "!"
+							 							end
+								 					end
+							 					end
+							 				end
+							 			end
+							 		end
+								 end
+							end
+						end
+					end
+				end
+			end
+		end
+		result := op
+	end
+	
+	operation genGuards(sm : StateMachine) : String is do
+		var res : String init ""
+		sm.transitions.each{t|
+			if ( not t.guard.isVoid() )
+				then res := res + genSingleGuard(t) + "\n"
+			end
+		}
+		result := res
+	end
+	
+	operation genSingleGuard(t : Transition) : String is do
+		var res : String init "\tpublic boolean "
+		res := res + genGuardName(t) + "() {\n"
+		res := res + "\t\treturn " + genExpression(t.guard) + ";\n"
+		res := res + "\t}\n"
+		result := res
+	end
+	
+	operation genConstructor( className : String ) : String is do
+		var res : String init "\tpublic " + className + "() throws Statechart_exception {\n"
+        res := res + "\t\t//init_structure();\n"
+        res := res + "\t\tinit_behavior();\n"
+		res := res + "\t}\n"
+    	result := res
+	end
+	
+	operation genManagement(sm : StateMachine) : String is do
+		var res : String init "
+    public String async_current_state() {
+        return " + getMonitor(sm) + ".async_current_state();
+    }
+
+    public String current_state() {
+        return " + getMonitor(sm) + ".current_state();
+    }
+
+    public boolean in_state(String name) {
+        return " + getMonitor(sm) + ".in_state(name);
+    }
+
+    public void to_state(String name) throws Statechart_exception {
+        " + getMonitor(sm) + ".to_state(name);
+    }
+
+    public String name() {
+        return " + getMonitor(sm) + ".name();
+    }
+
+    public String verbose() {
+        return " + getMonitor(sm) + ".verbose();
+    }\n"
+	    result := res
+	end
+	
+	operation genMain(sm : StateMachine, className : String) : String is do
+		var res : String init "\tpublic static void main(String args[]) {
+        try {
+			"
+			res := res + className + " ms = new " + className + "();
+            ms.start();
+            
+            Scanner sc = new Scanner(System.in);
+            String choice;
+            do {
+            	System.out.print(\"Enter " + genChoices(sm) +" or 'end': \");
+                choice = sc.nextLine();\n\n"
+        
+        sm.events.each{e|
+			res := res + genMainCondition(e)
+		}
+        
+        res := res + "
+	        }while(! choice.equals(\"end\"));
+	            
+	            ms.stop();
+	            System.exit(0);
+	        	                
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+    }"
+		result := res
+	end
+	
+	operation genChoices(sm : StateMachine) : String is do
+		var res : String init ""
+		var premier : Boolean init true
+		sm.events.each{e|
+			if (not premier)
+				then res := res + ", '" + refactorString(e.name) + "'"
+				else res := res + "'" + refactorString(e.name) + "'"
+					premier := false
+			end
+		}
+		result := res
+	end
+	
+	operation genMainCondition(e : Event) : String is do
+		var s : String init e.name.substring(0, 1)
+		var S : String init s.toUpperCase()
+		var name : String init refactorString(e.name)
+		var res : String init "\t\t\t\tif (choice.equals(\"" + refactorString(e.name) + "\")) {\n"
+		res := res + "\t\t\t\t\tms.evt" + S + name.substring(1, name.size) + "();\n"
+		result := res + "\t\t\t\t}\n"
+	end
+	
+	method main() is do 
+		var file : FileIO
+		var fileToGen : String
+		
+		var sm : StateMachine
+		var fileName : String init "platform:/resource/StateMachine"
+		fileToGen := fileName + "/src/generatedByKermeta"
+		var dirName : String
+		var modelName : String
+		
+		dirName := stdio.read("Directory of the model? [default=models] ")
+		if (dirName == "") then dirName := "models" end	
+		modelName := stdio.read("Name of the model file? ")
+		fileName := fileName + "/" + dirName + "/" + modelName
+		
+		sm := loadModel(fileName)
+		stdio.writeln("\n === State machine loaded ===\n")
+		
+		printModel(sm)
+				
+		fileToGen := fileToGen + "/" + refactorString(sm.name) +".java"
+				
+		file:=kermeta::io::FileIO.new.writeTextFile(fileToGen, genCode(sm))
+		
+	end
+}

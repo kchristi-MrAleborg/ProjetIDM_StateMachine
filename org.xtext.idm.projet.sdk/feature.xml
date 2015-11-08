@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature id="org.xtext.idm.projet.sdk"
+	label="StateMachine SDK Feature "
+	version="1.0.0.qualifier">
+	<plugin
+			id="org.xtext.idm.projet"
+			download-size="0"
+			install-size="0"
+			version="0.0.0"
+			unpack="false"/>
+	<plugin
+			id="org.xtext.idm.projet.ui"
+			download-size="0"
+			install-size="0"
+			version="0.0.0"
+			unpack="false"/>
+</feature>
