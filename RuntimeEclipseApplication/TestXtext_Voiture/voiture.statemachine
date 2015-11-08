@@ -1,0 +1,25 @@
+StateMachine Voiture {
+	var vitesse : integer
+	var maxAtteint : boolean := false
+	
+	events { "accelerer", "ralentir" }
+	
+	state Arret{
+		do { vitesse := 0 }
+	}
+	
+	state Marche {
+      state MoinsVite {}
+      state PlusVite {}
+      state Maximum {
+         do { vitesse := 100; maxAtteint := true }
+      }
+      init with PlusVite
+   }
+	
+	init with Arret
+	
+	from Arret to Marche for "accelerer"
+   	from Marche to PlusVite for "accelerer"
+   	from Marche to MoinsVite for "ralentir"
+}
